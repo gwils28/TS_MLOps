@@ -57,3 +57,13 @@ dépend des données autant que du code, et les données changent sans prévenir
   estimable sans labels). Le choc COVID les traverse toutes les trois en quelques semaines.
 - Le papier ne parle pas d'**horloge**. Dans un système à labels retardés, « détecter vite » n'a
   de sens qu'en précisant quand chaque signal est disponible.
+
+## Les cinq questions de mesure de la dette (p. 8), appliquées à W47
+
+| Question | Réponse pour ce dépôt |
+|---|---|
+| Peut-on tester une approche entièrement nouvelle à pleine échelle facilement ? | Oui pour le monitoring (un `Monitor` se branche sur n'importe quel frame avec `y_pred`) ; non pour le forecaster, dont les features sont figées par la contrainte d'horizon. |
+| Quelle est la fermeture transitive des dépendances de données ? | Un seul producteur (TLC), haché ; calendrier fédéral via `holidays` (versionné par `uv.lock`). |
+| Peut-on mesurer précisément l'impact d'un changement ? | Oui sur la référence (garde-fou) ; le banc E3 mesure l'impact d'un changement de règle d'alerte en rappel, délai et fausses alertes. |
+| Améliorer un modèle dégrade-t-il les autres ? | Oui : D1 a amélioré le forecaster et rendu les détecteurs de dérive d'entrée aveugles au niveau. C'est le CACE en action. |
+| Un nouveau venu se met-il vite à niveau ? | `CLAUDE.md`, `SPEC.md`, notes d'implémentation et rapport ; le point le plus difficile à transmettre est le modèle des trois horloges. |
