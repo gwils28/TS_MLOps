@@ -1,0 +1,53 @@
+# W47 protocol - pre-registered before the first forecast (see SPEC.md).
+# Every number used by the pipeline comes from this file.
+
+data:
+  source: "NYC TLC yellow taxi trip records (parquet)"
+  url_template: "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{ym}.parquet"
+  first_month: "2016-07"
+  last_month: "2021-12"
+  timestamp_column: "tpep_pickup_datetime"
+  timezone_note: "TLC timestamps are local New York wall-clock time, naive; DST gaps/duplicates are kept as-is"
+  manifest: "configs/data_manifest.csv"       # sha256 of every raw file actually downloaded
+  hourly_series: "data/processed/yellow_hourly.csv"
+
+timing:
+  horizon_hours: 168          # H: forecast for target t is issued at t - H (one week ahead)
+  label_latency_hours: 0      # L: truth for target t is available at t + L (scenario parameter)
+  min_lag_hours: 168          # every feature must be observable at issue time: lag >= H
+
+periods:                      # half-open intervals [start, end)
+  train:     ["2016-08-01", "2018-07-01"]   # 2 years, first month burnt for lags
+  reference: ["2018-07-01", "2019-07-01"]   # 1 full year, out-of-sample, labels known -> fits DLE & drift
+  control:   ["2019-07-01", "2020-03-01"]   # stationary pool: false-alarm rate + injection base
+  covid:     ["2020-03-01", "2022-01-01"]   # real shock + recovery
+
+model:
+  target_transform: "log1p"
+  lgbm_params:
+    n_estimators: 600
+    learning_rate: 0.03
+    num_leaves: 63
+    min_child_samples: 40
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+    random_state: 47
+    verbose: -1
+
+monitoring:
+  chunk_period: "D"           # daily chunks (24 hourly targets); weekly variant in sensitivity
+  dle_metrics: ["mae", "rmse"]
+  univariate_continuous_methods: ["kolmogorov_smirnov", "wasserstein"]
+  univariate_categorical_methods: ["chi2", "jensen_shannon"]
+  min_consecutive_chunks: 2   # persistence filter used by the alerting layer
+
+injection:                    # block 2 bis : controlled scenarios on the control pool
+  n_runs: 40
+  pre_days: 14
+  post_days: 28
+  seed: 47
+  covariate_shift_beta: [1.0, 2.0]          # tilt strength of the x-only resampling
+  concept_bias: [-0.10, -0.20, -0.30]       # y' = (1+d) y, features frozen
+  concept_noise: [0.15, 0.30]               # y' = y * exp(s * eps), features frozen
+  propagated_bias: [-0.20]                  # level shift applied to the series, features recomputed
