@@ -27,3 +27,33 @@ dépend des données autant que du code, et les données changent sans prévenir
 | 7 | **Changes in the external world** (p. 7) | Seuils fixes dans un système dynamique ; surveiller le biais de prédiction, poser des *action limits*, surveiller les producteurs amont. | C'est le sujet de W47. Voir ci-dessous. |
 | 8 | Data testing, reproductibilité, processus, culture (p. 7-8) | « Basic sanity checks are useful, as more sophisticated tests that monitor changes in input distributions. » | Tests anti-fuite, tests d'invariants des scénarios, réplique DLE testée contre NannyML. |
 | 9 | **Mesurer la dette** (p. 8) | Cinq questions (voir plus bas). | Appliquées au projet en fin de page. |
+
+## § 7, lu de près : ce que le papier recommandait déjà en 2015
+
+1. **Seuils fixes** (*Fixed Thresholds in Dynamic Systems*). « Thus if a model updates on new
+   data, the old manually set threshold may be invalid. » Parade proposée : apprendre les seuils
+   sur des données de validation. NannyML fait exactement cela (moyenne ± 3 σ sur la référence),
+   mais le seuil devient faux dès que le niveau de la série change : pendant le confinement, la
+   MAE réalisée tombe à 168 trajets pour un seuil calibré à ~2 500. Aucun détecteur absolu ne
+   peut alerter dans ce régime. **Le seuil doit vivre à la même échelle que la métrique**
+   (relative si le niveau bouge), ce qui motive D2.
+2. **Biais de prédiction** (*Prediction Bias*). « the distribution of predicted labels is equal to
+   the distribution of observed labels ». C'est un contrôle **à labels**, mais bon marché et
+   découpable par tranche. Il complète DLE, qui est aveugle au concept drift : le biais réalisé
+   sur les cibles récentes est le meilleur détecteur de concept drift disponible (E3).
+3. **Action limits.** « These limits should be broad enough not to trigger spuriously. » C'est la
+   version 2015 du « ne pas alerter sur la dérive seule » du brief.
+4. **Producteurs amont** (*Up-Stream Producers*). Surveiller la chaîne qui produit les features.
+   Ici, la latence des labels L est une propriété du producteur (TLC publie avec environ deux mois
+   de délai) : elle fixe la valeur réelle d'un estimateur sans labels.
+5. « Because external changes occur in real-time, response must also occur in real-time as
+   well. » Le banc E3 mesure ce temps de réponse, sur l'horloge réelle.
+
+## Ce que le papier ne dit pas (et que W47 montre)
+
+- Sculley et al. traitent le changement du monde comme **une** catégorie. Pour un estimateur
+  sans labels, il faut en distinguer au moins trois : covariate shift dans le support (estimable),
+  covariate shift hors support (non estimable, le nanny model extrapole), concept drift (non
+  estimable sans labels). Le choc COVID les traverse toutes les trois en quelques semaines.
+- Le papier ne parle pas d'**horloge**. Dans un système à labels retardés, « détecter vite » n'a
+  de sens qu'en précisant quand chaque signal est disponible.
