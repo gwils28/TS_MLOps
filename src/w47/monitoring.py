@@ -37,6 +37,15 @@ INPUT_DRIFT_COLUMNS = CONTINUOUS_FEATURES + [LEVEL] + CATEGORICAL_FEATURES  # ex
 SUPPORT_COLUMNS = CONTINUOUS_FEATURES + ["y_pred"]
 
 
+def _typed(df: pd.DataFrame) -> pd.DataFrame:
+    """NannyML decides categorical vs continuous from the dtype (``_split_features_by_type``):
+    int calendar columns would silently be treated as continuous by DLE and PCA. Cast them."""
+    out = df.copy()
+    for c in CATEGORICAL_FEATURES:
+        out[c] = out[c].astype("category")
+    return out
+
+
 def _flat(df: pd.DataFrame) -> pd.DataFrame:
     """Keep analysis chunks only and index them by chunk start date."""
     if isinstance(df.columns, pd.MultiIndex):
@@ -124,19 +133,20 @@ class Monitor:
 
     def fit(self, ref: pd.DataFrame) -> Monitor:
         ref = ref.reset_index(drop=True)
+        tref = _typed(ref)
         kw = dict(timestamp_column_name="timestamp", chunk_period=self.chunk_period)
         self.dle = nml.DLE(feature_column_names=FEATURES, y_pred="y_pred", y_true="y_true",
-                           metrics=self.metrics, **kw).fit(ref)
+                           metrics=self.metrics, **kw).fit(tref)
         self.perf = nml.PerformanceCalculator(problem_type="regression", y_pred="y_pred",
                                               y_true="y_true", metrics=self.metrics,
-                                              **kw).fit(ref)
-        self.pca = nml.DataReconstructionDriftCalculator(column_names=FEATURES, **kw).fit(ref)
+                                              **kw).fit(tref)
+        self.pca = nml.DataReconstructionDriftCalculator(column_names=FEATURES, **kw).fit(tref)
         if self.with_univariate:
             self.uni = nml.UnivariateDriftCalculator(
                 column_names=UNI_CONTINUOUS + UNI_CATEGORICAL,
                 treat_as_categorical=UNI_CATEGORICAL,
                 continuous_methods=self.cont_methods, categorical_methods=self.cat_methods,
-                **kw).fit(ref)
+                **kw).fit(tref)
         self.ref_min = ref[SUPPORT_COLUMNS].min()
         self.ref_max = ref[SUPPORT_COLUMNS].max()
         if self.with_replica:
@@ -157,7 +167,8 @@ class Monitor:
     def run(self, ana: pd.DataFrame, labels: bool = True) -> pd.DataFrame:
         ana = ana.reset_index(drop=True)
         blind = ana.drop(columns=["y_true"])  # DLE and drift never see the labels
-        est = _flat(self.dle.estimate(blind).to_df())
+        tblind = _typed(blind)
+        est = _flat(self.dle.estimate(tblind).to_df())
         out = pd.DataFrame(index=est.index)
         for m in self.metrics:
             out[f"est_{m}"] = est[(m, "value")].astype(float)
@@ -166,17 +177,17 @@ class Monitor:
             out[f"{m}_lower"] = est[(m, "lower_threshold")].astype(float)
             out[f"est_{m}_alert"] = est[(m, "alert")].astype(bool)
         if labels:
-            real = _flat(self.perf.calculate(ana).to_df())
+            real = _flat(self.perf.calculate(_typed(ana)).to_df())
             for m in self.metrics:
                 out[f"real_{m}"] = real[(m, "value")].astype(float).reindex(out.index)
                 out[f"real_{m}_alert"] = real[(m, "alert")].astype(bool).reindex(out.index)
-        pca = _flat(self.pca.calculate(blind).to_df())
+        pca = _flat(self.pca.calculate(tblind).to_df())
         out["pca_err"] = pca[("reconstruction_error", "value")].astype(float).reindex(out.index)
         out["pca_upper"] = pca[("reconstruction_error", "upper_threshold")].astype(float).reindex(
             out.index)
         out["pca_alert"] = pca[("reconstruction_error", "alert")].astype(bool).reindex(out.index)
         if self.with_univariate:
-            uni = _flat(self.uni.calculate(blind).to_df())
+            uni = _flat(self.uni.calculate(tblind).to_df())
             for col, method, field in uni.columns:
                 if col == "chunk" or field not in ("value", "alert"):
                     continue
