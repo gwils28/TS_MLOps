@@ -43,3 +43,23 @@ def train_forecaster(df: pd.DataFrame, cfg: dict) -> Forecaster:
     return Forecaster(cfg["model"]["lgbm_params"], cfg["model"]["target_transform"]).fit(
         tr, tr["y_true"]
     )
+
+
+def add_predictions(df: pd.DataFrame, fc: Forecaster) -> pd.DataFrame:
+    out = df.copy()
+    out["y_pred"] = fc.predict(out)
+    out["y_naive"] = out["lag_168"]  # seasonal weekly naive, the credibility baseline
+    out["y_naive4w"] = out["mean_same_hour_4w"]
+    return out
+
+
+def point_metrics(y_true, y_pred) -> dict:
+    y_true, y_pred = np.asarray(y_true, float), np.asarray(y_pred, float)
+    err = y_true - y_pred
+    return {
+        "mae": float(np.mean(np.abs(err))),
+        "rmse": float(np.sqrt(np.mean(err**2))),
+        "mape": float(np.mean(np.abs(err) / np.maximum(y_true, 1.0))),
+        "bias": float(np.mean(-err)),  # >0: over-forecast
+        "n": int(len(err)),
+    }
