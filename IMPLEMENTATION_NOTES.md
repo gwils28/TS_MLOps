@@ -68,3 +68,35 @@ fuite de métadonnées à couper : `NML_DISABLE_USAGE_LOGGING=1`, posé en tête
 Première version : la variante cross-fittée réutilisait le modèle plein sur l'analyse (seules
 ses estimations de référence étaient hors échantillon), donc identique à NannyML hors
 référence. Corrigé : sur l'analyse, elle moyenne les cinq modèles de pli.
+
+### P5 — LightGBM bloqué dès que deux processus tournent en même temps
+
+- **Symptôme.** E2 lancé avec un pool `multiprocessing` de 4 workers : après 28 minutes CPU par
+  worker, aucun résultat. `py-spy dump` montre chaque worker encore dans `Booster.update`, à
+  entraîner le forecaster (1 s en temps normal). Même chose avec 4 processus OS indépendants, et
+  même avec **deux** processus. Des workers orphelins d'un premier essai tué avaient en plus
+  faussé un chronométrage.
+- **Diagnostic.** Reproduit sur LightGBM nu (17 000 × 13, 600 arbres) : seul, 0,6 s ; deux
+  processus simultanés avec le nombre de threads par défaut, > 60 s (tués) ; avec `n_jobs=1`
+  explicite, ~1 s. `OMP_NUM_THREADS=1` ne suffit **pas** ici. Cause : les barrières OpenMP en
+  attente active (*spin-wait*) se marchent dessus quand plusieurs processus se partagent les
+  cœurs du conteneur.
+- **Correction retenue.** `OMP_WAIT_POLICY=PASSIVE` (threads endormis au lieu d'actifs en
+  attente) : 4 entraînements simultanés en ~2 s, **sans changer** les hyperparamètres, donc le
+  nanny model reste le `LGBMRegressor()` par défaut de NannyML. E2 tourne en 4 fragments
+  (processus OS indépendants, `--shard i --n-shards 4`) lancés par le Makefile, puis fusionnés.
+- **Leçon MLOps.** Un job de monitoring planifié à côté d'un autre job LightGBM sur la même
+  machine peut se bloquer sans erreur. À fixer dans l'image (variable d'environnement), pas dans
+  la mémoire de l'équipe.
+
+### P6 — Jours fériés
+
+`holidays` interrogé jour par jour sur 48 240 heures : lent. Remplacé par un `isin` vectorisé
+sur l'ensemble des dates fériées.
+
+### P7 — LightGBM 4.5 et scikit-learn 1.9 incompatibles sur entrées NumPy
+
+`LGBMRegressor.fit(np.ndarray, …)` lève `TypeError: check_X_y() got an unexpected keyword
+argument 'force_all_finite'` (argument retiré de scikit-learn). Le chemin `pandas.DataFrame` ne
+passe pas par cette vérification : tout le dépôt n'appelle LightGBM qu'avec des DataFrame. À
+surveiller lors d'une montée de version (le `uv.lock` fige la combinaison qui marche).
