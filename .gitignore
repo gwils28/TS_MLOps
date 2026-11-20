@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/raw/
+data/interim/
+*.part
+report/.quarto/
+report/_freeze/
+/.quarto/
+.env
+.env.*
+*.log
