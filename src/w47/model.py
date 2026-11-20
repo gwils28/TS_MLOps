@@ -8,25 +8,36 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from w47.features import CATEGORICAL_FEATURES, FEATURES, make_features, period_mask
+from w47.features import CATEGORICAL_FEATURES, FEATURES, LEVEL, make_features, period_mask
 
 
 @dataclass
 class Forecaster:
+    """LightGBM on a level-relative target.
+
+    target = log1p(y_t) - log1p(level), level = mean of the 168 h ending at t - 168 (observable
+    at issue time). Prediction = expm1(model + log1p(level)). ``target_transform="log1p"`` keeps
+    the original v0 behaviour (absolute log target) for the record of deviation D1.
+    """
+
     params: dict
-    target_transform: str = "log1p"
+    target_transform: str = "log_ratio_to_level"
     model: lgb.LGBMRegressor | None = None
 
+    def _anchor(self, X: pd.DataFrame) -> np.ndarray:
+        if self.target_transform == "log_ratio_to_level":
+            return np.log1p(X[LEVEL].to_numpy())
+        return np.zeros(len(X))
+
     def fit(self, X: pd.DataFrame, y: pd.Series) -> Forecaster:
-        target = np.log1p(y) if self.target_transform == "log1p" else y
+        target = np.log1p(y.to_numpy()) - self._anchor(X)
         self.model = lgb.LGBMRegressor(**self.params)
         self.model.fit(X[FEATURES], target, categorical_feature=CATEGORICAL_FEATURES)
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        raw = self.model.predict(X[FEATURES])
-        pred = np.expm1(raw) if self.target_transform == "log1p" else raw
-        return np.clip(pred, 0, None)
+        raw = self.model.predict(X[FEATURES]) + self._anchor(X)
+        return np.clip(np.expm1(raw), 0, None)
 
 
 def build_frame(y: pd.Series) -> pd.DataFrame:
@@ -35,7 +46,7 @@ def build_frame(y: pd.Series) -> pd.DataFrame:
     df = X.copy()
     df["y_true"] = y
     df["timestamp"] = y.index
-    return df.dropna(subset=FEATURES)
+    return df.dropna(subset=FEATURES + [LEVEL])
 
 
 def train_forecaster(df: pd.DataFrame, cfg: dict) -> Forecaster:

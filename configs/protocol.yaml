@@ -23,7 +23,7 @@ periods:                      # half-open intervals [start, end)
   covid:     ["2020-03-01", "2022-01-01"]   # real shock + recovery
 
 model:
-  target_transform: "log1p"
+  target_transform: "log_ratio_to_level"   # deviation D1 (was "log1p")
   lgbm_params:
     n_estimators: 600
     learning_rate: 0.03
