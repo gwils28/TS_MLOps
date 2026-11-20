@@ -28,27 +28,51 @@ def _persist(flag: pd.Series, k: int) -> pd.Series:
     return flag.astype(int).rolling(k, min_periods=k).sum().eq(k)
 
 
+def reference_thresholds() -> dict[str, float]:
+    """Alert thresholds derived from the reference period's daily chunks (E1 output).
+
+    * ``d3`` / ``d2``: NannyML's rule (mean + 3 or 2 sigma of the *realized* daily MAE);
+    * ``w3`` / ``w2``: the same rule on 7-day rolling means (SPEC E4, weekly sensitivity);
+    """
+    r = pd.read_csv(TABLES / "e1_reference_chunks.csv", index_col=0, parse_dates=True)
+    real, real7 = r["real_mae"], r["real_mae"].rolling(7).mean()
+    return {
+        "d3": real.mean() + 3 * real.std(), "d2": real.mean() + 2 * real.std(),
+        "w3": real7.mean() + 3 * real7.std(), "w2": real7.mean() + 2 * real7.std(),
+    }
+
+
 REALIZED_PREFIX = "réalisé"
 
 
-def detector_flags(t: pd.DataFrame, k: int = 1) -> dict[str, pd.Series]:
+def detector_flags(t: pd.DataFrame, k: int = 1, thr: dict | None = None) -> dict[str, pd.Series]:
     """Boolean alert series per detector for one run table (index = target day, sorted).
 
     DLE alerts count the upper side only: an estimate *below* the band is not a page.
     """
+    thr = thr or reference_thresholds()
+    est7, real7 = t["est_mae"].rolling(7).mean(), t["real_mae"].rolling(7).mean()
     uni1 = t["n_input_drift"] >= 1
     uni2 = t["n_input_drift"] >= 2
     pca = t["pca_alert"].fillna(False).astype(bool)
     pred = t.get("uni_alert_y_pred_wasserstein", pd.Series(False, index=t.index)).fillna(False)
-    dle = t["est_mae"] > t["mae_upper"]
+    drift = pca | uni2
+    dle = {
+        "DLE seul": t["est_mae"] > t["mae_upper"],
+        "DLE ±2σ": t["est_mae"] > thr["d2"],
+        "DLE 7 j ±3σ": est7 > thr["w3"],
+        "DLE 7 j ±2σ": est7 > thr["w2"],
+    }
     flags = {
         "dérive univariée (≥1 entrée)": uni1,
         "dérive univariée (≥2 entrées)": uni2,
         "dérive multivariée (PCA)": pca,
         "dérive des prédictions": pred.astype(bool),
-        "DLE seul": dle,
-        "règle jointe (dérive ET DLE)": (pca | uni2) & dle,
+        **dle,
+        "règle jointe (dérive ET DLE)": drift & dle["DLE seul"],
         "réalisé (labels)": t["real_mae"] > t["mae_upper"],
+        "réalisé ±2σ": t["real_mae"] > thr["d2"],
+        "réalisé 7 j ±3σ": real7 > thr["w3"],
     }
     return {name: _persist(f.fillna(False).astype(bool), k) for name, f in flags.items()}
 
@@ -56,6 +80,7 @@ def detector_flags(t: pd.DataFrame, k: int = 1) -> dict[str, pd.Series]:
 def evaluate(runs: pd.DataFrame, k: int = 1, latency_days: int = 0) -> pd.DataFrame:
     cfg = load_config()
     post_days = cfg["injection"]["post_days"]
+    thr = reference_thresholds()
     rows = []
     for (scenario, run_id), t in runs.groupby(["scenario", "run"], sort=False):
         t = t.sort_index()
@@ -63,7 +88,7 @@ def evaluate(runs: pd.DataFrame, k: int = 1, latency_days: int = 0) -> pd.DataFr
         post = t["rel_day"] >= 0
         # pre-registered harm: post-onset mean realized MAE above NannyML's upper threshold
         harmful = bool(t.loc[post, "real_mae"].mean() > t["mae_upper"].iloc[0])
-        for det, f in detector_flags(t, k).items():
+        for det, f in detector_flags(t, k, thr).items():
             hits = t.index[post & f.to_numpy()]
             pre_alerts = int(f[~post].sum())
             first = hits.min() if len(hits) else pd.NaT
