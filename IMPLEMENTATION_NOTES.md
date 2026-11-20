@@ -100,3 +100,23 @@ sur l'ensemble des dates fériées.
 argument 'force_all_finite'` (argument retiré de scikit-learn). Le chemin `pandas.DataFrame` ne
 passe pas par cette vérification : tout le dépôt n'appelle LightGBM qu'avec des DataFrame. À
 surveiller lors d'une montée de version (le `uv.lock` fige la combinaison qui marche).
+
+### D3 — Seuils relatifs « type SLO » (exploratoire)
+
+- **Constat (E3, seuils pré-enregistrés).** Avec la règle NannyML (moyenne + 3 σ de la MAE
+  *réalisée* des chunks journaliers de référence, soit ≈ 2 519 trajets pour une moyenne de 825),
+  DLE n'alerte **jamais**, même quand l'erreur réalisée augmente de 47 % (covariate shift nocif),
+  et la règle jointe non plus. Les variantes pré-enregistrées (± 2 σ, fenêtre glissante de
+  7 jours) n'y changent presque rien.
+- **Cause.** Le seuil est calibré sur la dispersion de la MAE réalisée d'un jour à l'autre
+  (σ ≈ 566 : fériés, intempéries, bruit d'échantillonnage sur 24 heures), alors que l'estimation
+  DLE est une espérance conditionnelle, donc lisse. Même recalibré sur l'estimation hors
+  échantillon de la référence (σ ≈ 346), un seuil à ± 3 σ reste au-dessus d'une dégradation de
+  +50 %.
+- **Variante exploratoire.** Moyenne glissante sur 7 jours comparée à 1,25 × l'erreur moyenne de
+  référence (estimation cross-fittée pour DLE, réalisée pour le réalisé), et une définition du
+  « dommage » relative (erreur post-injection ≥ 1,25 × erreur pré-injection). Ajoutées **après**
+  avoir vu les résultats pré-enregistrés : étiquetées D3 partout.
+- **Limite connue.** DLE est biaisé d'environ +15 à +20 % sur la période de contrôle (E1, P0) :
+  le seuil relatif « DLE 7 j +25 % » seul produit 6,1 fausses alertes par 30 jours. La règle
+  jointe ramène ce taux à 0,86.
