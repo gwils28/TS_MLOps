@@ -29,3 +29,35 @@ dans le rapport là où il intervient.
 - **Conséquence pour le monitoring.** Un modèle normalisé « cache » les chocs de niveau à ses
   propres entrées : seules la prédiction (absolue) et la variable de niveau surveillée les voient.
   C'est un résultat en soi, discuté dans le rapport (E1).
+
+## Pièges et corrections
+
+### P1 — NannyML décide catégoriel / continu par le dtype
+
+`nannyml.base._split_features_by_type` : est catégorielle une colonne de dtype `object`,
+`string`, `category` ou `bool`. Les colonnes calendaires `int` (`hour`, `dayofweek`, `month`,
+`is_holiday`) étaient donc traitées comme **continues** par DLE (nanny model) et par la
+reconstruction PCA, sans avertissement, alors que la dérive univariée les traitait comme
+catégorielles (argument explicite `treat_as_categorical`). Symptôme : ma réplique DLE (qui passe
+ces colonnes en catégoriel à LightGBM) s'écartait de NannyML de 15 % en médiane. Correction :
+conversion en `category` avant tout appel NannyML (`monitoring._typed`). Après correction, la
+réplique reproduit NannyML à 0,0 % près (critère SPEC §8).
+
+### P2 — NannyML envoie de la télémétrie d'usage par défaut
+
+Au premier appel, NannyML tente d'envoyer des événements d'usage à `api.segment.io` (bloqué ici
+par le proxy, d'où des erreurs dans les journaux). En production ou chez un client, c'est une
+fuite de métadonnées à couper : `NML_DISABLE_USAGE_LOGGING=1`, posé en tête de
+`w47/monitoring.py`.
+
+### P3 — Dépendances NannyML 0.13.1
+
+- `pandas` 3 se résout mais n'est pas validé par NannyML : épinglé `< 3`.
+- `statsmodels` est importé par `nannyml.plots` sans être déclaré : ajouté.
+- `kaleido 0.2.1.post1` n'a de roue que pour armv7l : épinglé à `0.2.1`.
+
+### P4 — Variante cross-fittée de DLE
+
+Première version : la variante cross-fittée réutilisait le modèle plein sur l'analyse (seules
+ses estimations de référence étaient hors échantillon), donc identique à NannyML hors
+référence. Corrigé : sur l'analyse, elle moyenne les cinq modèles de pli.
