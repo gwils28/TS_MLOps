@@ -150,3 +150,26 @@ ni réconcilier entre eux.
    fausses alertes au prix du délai, ce que E3 mesure pour la règle « dérive ET DLE ».
 
 ---
+
+## 3. Vérification des citations du brief
+
+| Lien du brief | Attaché à | Ce que c'est | Soutient l'affirmation ? |
+|---|---|---|---|
+| arxiv.org/pdf/1808.08778 | DriftGuard | Ding & Toulis, *Dynamical systems theory for causal inference with application to synthetic control methods* (2018) | Non |
+| arxiv.org/pdf/2601.03099 | Sculley 2015 | Rho, Illick, Narasipura, Abadie, Hsu, Misra, *Time-Aware Synthetic Control* (2026) | Non |
+| qwe.edu.pl/…/claude-desktop-linux-unofficial-guide/ | NannyML | Guide non officiel de Claude Desktop sous Linux (d'après l'URL ; hôte bloqué) | Non |
+| aiblewmymind.substack.com/…/claude-cowork-scheduled-tasks-6-ways | règle d'alerte jointe | Billet sur les tâches planifiées de Claude Cowork (d'après l'URL ; hôte bloqué) | Non |
+| artificialcorner.com/…/claude-automates | politique de réentraînement | Billet sur l'automatisation avec Claude (d'après l'URL ; hôte bloqué) | Non |
+
+Les affirmations elles-mêmes (règle jointe, prudence au réentraînement) restent des bonnes
+pratiques défendables ; elles sont discutées et mesurées dans le bloc 3, mais **aucune source
+citée par le brief ne les soutient**. Les sources primaires de chaque affirmation sont celles du
+tableau « En bref ».
+
+## 4. Pour aller plus loin (non lus en détail, signalés pour la suite)
+
+- La documentation NannyML décrit une seconde méthode multivariée, le *domain classifier*
+  (LightGBM qui distingue référence et analyse, AUROC en validation croisée) : plus sensible que
+  la PCA aux dérives non linéaires.
+- Les méthodes de pondération par ratio de densité (adaptation au covariate shift) estiment
+  elles aussi une performance sans labels, avec la même hypothèse de support.
