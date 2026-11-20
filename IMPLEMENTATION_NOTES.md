@@ -30,6 +30,13 @@ dans le rapport là où il intervient.
   propres entrées : seules la prédiction (absolue) et la variable de niveau surveillée les voient.
   C'est un résultat en soi, discuté dans le rapport (E1).
 
+### D2 — MAPE ajoutée à DLE (exploratoire)
+
+Le SPEC prévoyait MAE et RMSE. Pendant le confinement, la MAE réalisée *baisse* (168 trajets,
+contre 812 avant le choc) parce que la demande s'effondre : une métrique absolue confond
+« meilleur modèle » et « moins de volume ». J'ai ajouté la MAPE (supportée par DLE) comme
+métrique sans échelle. Ajout fait **après** avoir vu les premières courbes E1 : exploratoire.
+
 ## Pièges et corrections
 
 ### P1 — NannyML décide catégoriel / continu par le dtype
