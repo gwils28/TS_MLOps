@@ -100,3 +100,53 @@ applique moyenne + 3 σ. C'est le calculateur qui s'applique (vérifié dans
 `nannyml/drift/univariate/calculator.py`, `DEFAULT_THRESHOLDS`).
 
 ---
+
+## 2. DriftGuard (Alam, Rahman, Sadeqa — arXiv:2601.08928, v1, 13 janvier 2026)
+
+### 2.1 Ce que propose le papier
+
+Cinq modules : prévision de base (Prophet, XGBoost, LSTM ; WMAPE 0,048 à 0,052), injection de
+dérive, **ensemble de quatre détecteurs** (ratio d'erreur RMSE récent / RMSE de base, KS et PSI
+sur les features, autoencodeur sur les résidus, CUSUM sur les résidus ; dérive signalée si au
+moins trois sur quatre votent), diagnostic SHAP agrégé du SKU au magasin puis à la région (c'est
+le sens de « hiérarchique »), et réentraînement sélectif sous contrainte de coût (fenêtre choisie
+dans {30, 60, 90, 180} jours, seuls les 15-20 % de SKU les plus touchés).
+
+### 2.2 Ce que valent les chiffres
+
+L'abstract dit, verbatim : « 97.8% detection recall within 4.2 days ». La section V.A précise
+« mean latency » et un taux de faux positifs de 3,2 %. Mais :
+
+- la section III.C annonce 98 % de rappel, 3 % de faux positifs et une latence **médiane** de
+  5 jours ; la figure 1 dit « 3-day Latency » ; le tableau III donne 5,1 et 4,2 jours sans
+  expliquer la seconde colonne ;
+- la précision est définie mais jamais chiffrée ; le dénominateur des faux positifs n'est pas
+  défini ; ni seuils, ni fenêtres, ni graines, ni nombre de répétitions ;
+- le tableau I porte sur « 5 040 SKU dans 10 magasins », pas sur les 30 490 séries annoncées ;
+- la figure 3 montre des magasins de New York et de Floride, absents de M5 (Californie, Texas,
+  Wisconsin, comme le papier le dit lui-même) ;
+- la dérive est injectée au jour 1 800 pour 113 jours, soit jusqu'au jour 1 913 : **dans** la
+  fenêtre d'entraînement et de validation (jours 1-1 913), pas dans la fenêtre de test ;
+- aucune version publiée ni révision par les pairs n'est indiquée, et aucun code n'est fourni.
+
+Conclusion de veille : le papier est utile pour son **cadre d'évaluation** (dérive injectée à une
+date connue, rappel × délai × faux positifs), pas pour ses chiffres, qu'on ne peut ni reproduire
+ni réconcilier entre eux.
+
+### 2.3 Ce que j'en retiens pour W47
+
+1. **La métrique d'un système de monitoring est un triplet**, pas un couple : rappel, délai *et*
+   fausses alertes. Le brief retient « rappel × délai » ; sans les fausses alertes, un détecteur
+   qui alerte tous les jours a 100 % de rappel et un délai nul.
+2. **Le délai doit dire de quelle horloge il parle.** DriftGuard le définit comme « days between
+   drift onset and detection » sans préciser si la détection utilise des labels. Un détecteur à
+   base d'erreur (le ratio RMSE) a besoin des labels, donc il paie leur latence. Le banc E3 donne
+   les deux axes.
+3. **Les dérives de DriftGuard changent la cible** (saisonnalité × (1 − 0,4), niveau × 0,8,
+   volatilité × 3…). Ce sont des concept drifts au sens de NannyML, donc exactement le cas où DLE
+   se déclare impuissant. Un ensemble qui inclut un détecteur fondé sur l'erreur réalisée n'est
+   pas « sans labels ». Les deux outils ne répondent pas à la même question.
+4. **Le vote 3 sur 4** est une version de la « condition jointe » du bloc 3 ; elle réduit les
+   fausses alertes au prix du délai, ce que E3 mesure pour la règle « dérive ET DLE ».
+
+---
