@@ -33,12 +33,15 @@ def reference_thresholds() -> dict[str, float]:
 
     * ``d3`` / ``d2``: NannyML's rule (mean + 3 or 2 sigma of the *realized* daily MAE);
     * ``w3`` / ``w2``: the same rule on 7-day rolling means (SPEC E4, weekly sensitivity);
+    * ``rel``: exploratory D3, an SLO-like relative threshold: 7-day mean above 1.25 x the
+      reference mean (out-of-fold DLE estimate for DLE, realized MAE for realized).
     """
     r = pd.read_csv(TABLES / "e1_reference_chunks.csv", index_col=0, parse_dates=True)
     real, real7 = r["real_mae"], r["real_mae"].rolling(7).mean()
     return {
         "d3": real.mean() + 3 * real.std(), "d2": real.mean() + 2 * real.std(),
         "w3": real7.mean() + 3 * real7.std(), "w2": real7.mean() + 2 * real7.std(),
+        "rel_real": 1.25 * real.mean(), "rel_est": 1.25 * r["cf_mae"].mean(),
     }
 
 
@@ -62,6 +65,7 @@ def detector_flags(t: pd.DataFrame, k: int = 1, thr: dict | None = None) -> dict
         "DLE ±2σ": t["est_mae"] > thr["d2"],
         "DLE 7 j ±3σ": est7 > thr["w3"],
         "DLE 7 j ±2σ": est7 > thr["w2"],
+        "DLE 7 j +25 % (D3)": est7 > thr["rel_est"],
     }
     flags = {
         "dérive univariée (≥1 entrée)": uni1,
@@ -70,9 +74,11 @@ def detector_flags(t: pd.DataFrame, k: int = 1, thr: dict | None = None) -> dict
         "dérive des prédictions": pred.astype(bool),
         **dle,
         "règle jointe (dérive ET DLE)": drift & dle["DLE seul"],
+        "règle jointe 7 j +25 % (D3)": drift & dle["DLE 7 j +25 % (D3)"],
         "réalisé (labels)": t["real_mae"] > t["mae_upper"],
         "réalisé ±2σ": t["real_mae"] > thr["d2"],
         "réalisé 7 j ±3σ": real7 > thr["w3"],
+        "réalisé 7 j +25 % (D3)": real7 > thr["rel_real"],
     }
     return {name: _persist(f.fillna(False).astype(bool), k) for name, f in flags.items()}
 
@@ -88,6 +94,8 @@ def evaluate(runs: pd.DataFrame, k: int = 1, latency_days: int = 0) -> pd.DataFr
         post = t["rel_day"] >= 0
         # pre-registered harm: post-onset mean realized MAE above NannyML's upper threshold
         harmful = bool(t.loc[post, "real_mae"].mean() > t["mae_upper"].iloc[0])
+        # exploratory (D3): post-onset mean realized MAE at least 25 % above the pre-onset mean
+        harmful_rel = bool(t.loc[post, "real_mae"].mean() >= 1.25 * t.loc[~post, "real_mae"].mean())
         for det, f in detector_flags(t, k, thr).items():
             hits = t.index[post & f.to_numpy()]
             pre_alerts = int(f[~post].sum())
@@ -99,6 +107,7 @@ def evaluate(runs: pd.DataFrame, k: int = 1, latency_days: int = 0) -> pd.DataFr
                 clock = target_delay - (H_DAYS - 1) if len(hits) else np.nan
             rows.append({"scenario": scenario, "family": t["family"].iloc[0], "run": run_id,
                          "detector": det, "detected": len(hits) > 0, "harmful": harmful,
+                         "harmful_rel": harmful_rel,
                          "target_delay": target_delay, "clock_delay": clock,
                          "post_alert_days": int(f[post].sum()), "pre_alert_days": pre_alerts,
                          "pre_days": int((~post).sum()), "post_days": post_days})
@@ -129,6 +138,11 @@ def summary(ev: pd.DataFrame) -> pd.DataFrame:
             else np.nan,
             "alertes sur runs non nocifs": g.loc[~g.harmful, "detected"].mean()
             if (~g.harmful).any() else np.nan,
+            "part de runs nocifs (+25 %, D3)": g["harmful_rel"].mean(),
+            "rappel du dommage (+25 %, D3)": g.loc[g.harmful_rel, "detected"].mean()
+            if g.harmful_rel.any() else np.nan,
+            "alertes sur runs non nocifs (+25 %, D3)": g.loc[~g.harmful_rel, "detected"].mean()
+            if (~g.harmful_rel).any() else np.nan,
             "fausses alertes / 30 j": 30 * fa_days / exposure,
         })
     return pd.DataFrame(out)
